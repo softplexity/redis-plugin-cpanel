@@ -1,0 +1,12 @@
+[
+  {
+    "id": "redis_manager",
+    "group_id": "software",
+    "icon": "redis_icon.png",
+    "order": "1",
+    "featuremanager": true,
+    "type": "link",
+    "uri": "redis_plugin/index.live.php",
+    "name": "Redis"
+  }
+]
