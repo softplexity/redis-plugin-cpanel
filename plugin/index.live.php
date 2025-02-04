@@ -102,11 +102,6 @@ function generateBodyContent($status_info)
             store used for caching, as a vector database, streaming, and more.
         </p>
         <br>
-        <pre>
-            <?php if ($status_info['status'] === 'Running') : ?>
-                Running - Port: <?= $status_info['port'] ?> | Password: <?= $status_info['password'] ?> | User: <?= $status_info['user'] ?>
-            <?php endif; ?>
-        </pre>
         <div class="panel panel-default">
             <div class="panel-body">
                 <div class="header-section">
@@ -114,8 +109,41 @@ function generateBodyContent($status_info)
                     <h4>Redis Configuration:</h4>
                 </div>
                 <div class="status-section">
-                    <?= generateStatusDetails($status_info) ?>
+                    <table class="status-table">
+                        <tr>
+                            <th>Status:</th>
+                            <td><span class="status-label <?= strtolower(str_replace(' ', '-', $status_info['status'])) ?>"><?= $status_info['status'] ?></span></td>
+                        </tr>
+                        <?php if ($status_info['status'] === 'Running') : ?>
+                            <tr>
+                                <th>IP:</th>
+                                <td><?= $status_info['ip'] ?></td>
+                            </tr>
+                            <tr>
+                                <th>Port:</th>
+                                <td><?= $status_info['port'] ?></td>
+                            </tr>
+                            <tr>
+                                <th>Password:</th>
+                                <td><?= $status_info['password'] ?></td>
+                            </tr>
+                            <tr>
+                                <th>Maximum Memory:</th>
+                                <td><?= $status_info['max_memory'] ?></td>
+                            </tr>
+                            <tr>
+                                <th>Maximum Databases:</th>
+                                <td><?= $status_info['max_databases'] ?></td>
+                            </tr>
+                        <?php elseif ($status_info['status'] === 'Not Running (Never Started)') : ?>
+                            <tr>
+                                <th>Message:</th>
+                                <td>Please click the button below to <strong>Start Redis</strong>. For first-time setup, this may take a few minutes.</td>
+                            </tr>
+                        <?php endif; ?>
+                    </table>
                 </div>
+
                 <hr>
                 <form method="get" class="form-inline">
                     <input type="hidden" name="action" value="<?= $status_info['status'] === 'Running' ? 'stop' : 'start' ?>">
@@ -128,31 +156,5 @@ function generateBodyContent($status_info)
     </div>
     <?php
     return ob_get_clean();
-}
-
-/**
- * Generates the HTML for redis status based on current status.
- */
-function generateStatusDetails($status_info)
-{
-    if ($status_info['status'] === 'Running') {
-        return "
-            <p><strong>Status:</strong> <span class='status-label running'>{$status_info['status']}</span></p>
-            <p><strong>IP:</strong> {$status_info['ip']}</p>
-            <p><strong>Port:</strong> {$status_info['port']}</p>
-            <p><strong>Password:</strong> {$status_info['password']}</p>
-            <p><strong>Maximum Memory:</strong> {$status_info['max_memory']}</p>
-            <p><strong>Maximum Databases:</strong> {$status_info['max_databases']}</p>
-        ";
-    } elseif ($status_info['status'] === 'Not Running (Never Started)') {
-        return "
-            <p><strong>Status:</strong> <span class='status-label not-running'>{$status_info['status']}</span></p>
-            <p><strong>Message:</strong> Please click on the button below to <strong>Start Redis</strong>. It may take a few minutes for the first time.</p>
-        ";
-    } else {
-        return "
-            <p><strong>Status:</strong> <span class='status-label stopped'>Not Running</span></p>
-        ";
-    }
 }
 ?>
