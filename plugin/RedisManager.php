@@ -1,122 +1,226 @@
 <?php
 
+/**
+ * Class RedisManager
+ *
+ * @category        Plugin (cPanel)
+ * @author          Atik Rahman <ar[at]atikrahman.com>
+ * @version         v1.0
+ * @link            https://github.com/atikrahmanbd/redis-cpanel-plugin
+ * @link            https://atikrahman.com
+ * @license         http://www.apache.org/licenses/LICENSE-2.0
+ */
+
 class RedisManager
 {
     private $cpanel;
-
+    private $configDir;
+    private $configFile;
+    private $logDir;
+    private $logFile;
+    private $redisServer;
+    private $userRedisDir;
+    private $pidFile;
+    public $homeDir;
     public $username;
     public $userdetails;
 
-    /**
-     * Constructor to initialize the RedisManager with a CPANEL object.
-     *
-     * @param CPANEL $cpanel
-     */
     public function __construct($cpanel)
     {
         $this->cpanel = $cpanel;
-        $this->username = $this->getUser();
-        $this->userdetails = $this->getUserDetails();
+        $userData = $this->getAllUserData($cpanel);
+        $this->userdetails = $userData;
+        $this->username = $userData['main_domain']['user'];
+        $this->homeDir = $userData['main_domain']['homedir'];
+        $this->configDir = "{$this->homeDir}/.cpanel/plugin/redis";
+        $this->configFile = "{$this->configDir}/redis.conf";
+        $this->logDir = "{$this->configDir}/log";
+        $this->logFile = "{$this->logDir}/{$this->username}.log";
+        $this->userRedisDir = "{$this->homeDir}/.cpanel/plugin/redis/data";
+        $this->pidFile = "{$this->configDir}/redis.pid";
+        $this->redisServer = trim(shell_exec("which redis-server"));
     }
 
-    /**
-     * Starts the Redis service for the user.
-     *
-     * @throws Exception if the Redis service fails to start.
-     */
+    private function getAllUserData($cpanel)
+    {
+        $userData = $cpanel->uapi('DomainInfo', 'domains_data', array('format' => 'hash'));
+
+        if ($userData['cpanelresult']['result']['status'] === 1) {
+            return $userData['cpanelresult']['result']['data'];
+        } else {
+            throw new Exception('FAILED TO RETRIEVE USER DATA: ' . json_encode($userData['cpanelresult']['result']['errors']));
+        }
+    }
+
+    private function log($message)
+    {
+        if (!file_exists($this->logDir)) {
+            mkdir($this->logDir, 0755, true);
+        }
+        file_put_contents($this->logFile, date('[Y-m-d H:i:s] ') . strtoupper($message) . PHP_EOL, FILE_APPEND);
+    }
+
+    private function findAvailablePort()
+    {
+        $sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+        if ($sock === false) {
+            throw new Exception('Unable to create socket: ' . socket_strerror(socket_last_error()));
+        }
+
+        if (!socket_bind($sock, '127.0.0.1', 0)) {
+            throw new Exception('Unable to bind socket: ' . socket_strerror(socket_last_error($sock)));
+        }
+
+        if (!socket_listen($sock, 1)) {
+            throw new Exception('Unable to listen on socket: ' . socket_strerror(socket_last_error($sock)));
+        }
+
+        socket_getsockname($sock, $addr, $port);
+        socket_close($sock);
+
+        if ($port) {
+            return $port;
+        } else {
+            throw new Exception('Unable to find an available port');
+        }
+    }
+
+    private function createRedisConfig()
+    {
+        if (!file_exists($this->configFile)) {
+            $this->log("CREATING NEW REDIS CONFIG FOR {$this->username}");
+            $password = bin2hex(random_bytes(8));
+
+            if (!file_exists($this->configDir)) {
+                mkdir($this->configDir, 0755, true);
+            }
+            file_put_contents($this->configFile, '');
+            chown($this->configDir, $this->username);
+            chmod($this->configFile, 0644);
+
+            $port = $this->findAvailablePort();
+            $config = [
+                "bind 127.0.0.1",
+                "port $port",
+                "requirepass $password",
+                "dir {$this->userRedisDir}",
+                "pidfile {$this->pidFile}",
+                "maxmemory 256mb",
+                "databases 16",
+            ];
+
+            foreach ($config as $line) {
+                file_put_contents($this->configFile, $line . PHP_EOL, FILE_APPEND);
+            }
+
+            if (!file_exists($this->userRedisDir)) {
+                mkdir($this->userRedisDir, 0755, true);
+            }
+            chown($this->userRedisDir, $this->username);
+        }
+    }
+
     public function startRedis()
     {
-        $command = $this->executeCommand("redis-server --daemonize yes");
-        if (strpos($command, 'OK') === false) {
-            throw new Exception("Failed to start Redis server. Response: $command");
+        $this->createRedisConfig();
+        $output = shell_exec("/bin/redis-server {$this->configFile} --daemonize yes 2>&1");
+        $this->log("REDIS START COMMAND OUTPUT: $output");
+
+        // Wait for the PID file to be created
+        $timeout = 10; // seconds
+        $start_time = time();
+        while (!file_exists($this->pidFile) && (time() - $start_time) < $timeout) {
+            sleep(1); // sleep for 1 second
+        }
+
+        // Check if the PID file was created
+        if (file_exists($this->pidFile)) {
+            $this->log("STARTED REDIS FOR {$this->username}");
+            $this->addCronJob();
+        } else {
+            $this->log("FAILED TO START REDIS FOR {$this->username}: PID FILE NOT FOUND");
         }
     }
 
-    /**
-     * Stops the Redis service for the user.
-     *
-     * @throws Exception if the Redis service fails to stop.
-     */
     public function stopRedis()
     {
-        $command = $this->executeCommand("redis-cli shutdown");
-        if (strpos($command, 'not connected') !== false) {
-            throw new Exception("Failed to stop Redis server. Response: $command");
+        if (file_exists($this->pidFile)) {
+            $pid = trim(file_get_contents($this->pidFile));
+            if (posix_kill($pid, 15)) {
+                unlink($this->pidFile);
+                $this->log("STOPPED REDIS FOR {$this->username}");
+                $this->removeCronJob();
+            } else {
+                $this->log("FAILED TO STOP REDIS FOR {$this->username}: UNABLE TO KILL PROCESS WITH PID $pid");
+            }
+        } else {
+            $this->log("FAILED TO STOP REDIS FOR {$this->username}: PID FILE NOT FOUND");
         }
     }
 
-    /**
-     * Checks the status of the Redis service for the user.
-     *
-     * Outputs the service status to stdout.
-     */
     public function checkRedisStatus()
     {
-        $command = $this->executeCommand("redis-cli info");
-        if (empty($command) || strpos($command, 'redis_version') === false) {
-            echo "Not Running (Stopped)";
+        if (!file_exists($this->configFile)) {
+            echo "UNINITIATED PLEASE CLICK ON THE BUTTON BELOW TO \"<STRONG>START REDIS<STRONG>\". FOR THE FIRST TIME, IT MAY TAKE UPTO A FEW MINUTES TO START REDIS FOR YOU.";
+            $this->log("REDIS CONFIG FILE NOT FOUND FOR {$this->username}");
             return;
         }
 
-        $info = $this->parseRedisInfo($command);
+        $port = trim(shell_exec("grep '^port' {$this->configFile} | awk '{print $2}'"));
+        $password = trim(shell_exec("grep '^requirepass' {$this->configFile} | awk '{print $2}'"));
+        $maxmemory = trim(shell_exec("grep '^maxmemory' {$this->configFile} | awk '{print $2}'"));
+        $databases = trim(shell_exec("grep '^databases' {$this->configFile} | awk '{print $2}'"));
 
-        echo "Running {$info['port']} {$info['requirepass']} {$info['maxmemory']} {$info['databases']}";
+        if (file_exists($this->pidFile) && file_exists("/proc/" . trim(file_get_contents($this->pidFile)))) {
+            echo "RUNNING $port $password $maxmemory $databases";
+            $this->log("REDIS IS RUNNING FOR {$this->username} ON PORT $port");
+        } else {
+            echo "INACTIVE";
+            $this->log("REDIS IS INACTIVE FOR {$this->username}");
+        }
     }
 
-    /**
-     * Gets the current user's username.
-     *
-     * @return string User's username.
-     */
-    private function getUser()
+    private function cronBin()
     {
-        $response = $this->cpanel->uapi('UserManager', 'get_current_user');
-        return $response['cpanelresult']['result']['data']['user'] ?? 'unknown';
+        return "/usr/bin/flock -n {$this->configDir}/redis.lock" . " " . $this->redisServer;
     }
 
-    /**
-     * Fetches details about the current user.
-     *
-     * @return array Associative array with user details.
-     */
-    private function getUserDetails()
+    private function addCronJob()
     {
-        $response = $this->cpanel->uapi('Mysql', 'get_restriction_info');
-        return $response['cpanelresult']['result']['data'] ?? [];
+        $cronJobCommand = $this->cronBin() . " {$this->configFile} --daemonize yes >> /dev/null 2>&1";
+        $this->cpanel->api2(
+            'Cron',
+            'add_line',
+            array(
+                'command'       => $cronJobCommand,
+                'day'           => '*',
+                'hour'          => '*',
+                'minute'        => '*',
+                'month'         => '*',
+                'weekday'       => '*',
+            )
+        );
+        $this->log("ADDED CRON JOB FOR REDIS");
     }
 
-    /**
-     * Executes a system command and returns the result.
-     *
-     * @param string $command The command to execute.
-     * @return string The output of the command.
-     */
-    private function executeCommand($command)
+    private function removeCronJob()
     {
-        return shell_exec($command);
-    }
+        $cronList = $this->cpanel->api2(
+            'Cron',
+            'fetchcron'
+        );
 
-    /**
-     * Parses the output of the `redis-cli info` command into an associative array.
-     *
-     * @param string $infoOutput The raw output from `redis-cli info`.
-     * @return array Associative array of parsed Redis details.
-     */
-    private function parseRedisInfo($infoOutput)
-    {
-        $lines = explode("\n", $infoOutput);
-        $info = [];
-        foreach ($lines as $line) {
-            if (strpos($line, ':') !== false) {
-                list($key, $value) = explode(":", $line, 2);
-                $info[trim($key)] = trim($value);
+        foreach ($cronList['cpanelresult']['data'] as $cronLine) {
+            if (isset($cronLine['command']) && preg_match('/flock.*redis.*/', $cronLine['command'])) {
+                $this->cpanel->api2(
+                    'Cron',
+                    'remove_line',
+                    array(
+                        'commandnumber' => $cronLine['commandnumber'],
+                    )
+                );
             }
         }
-        return [
-            'port' => $info['tcp_port'] ?? 'N/A',
-            'maxmemory' => $info['maxmemory'] ?? 'N/A',
-            'requirepass' => $info['requirepass'] ?? 'N/A',
-            'databases' => $info['databases'] ?? 'N/A',
-        ];
+        $this->log("REMOVED CRON JOB FOR REDIS");
     }
 }
