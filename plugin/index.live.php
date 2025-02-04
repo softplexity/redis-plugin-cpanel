@@ -1,4 +1,5 @@
 <?php
+
 require_once "/usr/local/cpanel/php/cpanel.php";
 require_once __DIR__ . "/RedisManager.php";
 
@@ -41,25 +42,27 @@ try {
 function parseRedisStatus($status_output)
 {
     $status_info = explode(' ', $status_output);
+    $host = "127.0.0.1";
+    $user = "root";
 
     if (count($status_info) >= 5 && strtolower($status_info[0]) === 'running') {
         return [
             'status' => 'Running',
             'port' => $status_info[1],
             'password' => $status_info[2],
-            'ip' => '127.0.0.1',
-            'user' => 'root',
+            'ip' => $host,
+            'user' => $user,
             'max_memory' => $status_info[3],
             'max_databases' => $status_info[4],
             'uninitiated' => 'N/A',
         ];
-    } elseif (count($status_info) >= 1 && strtolower($status_info[0]) === 'uninitiated') {
+    } elseif (!empty($status_info) && strtolower($status_info[0]) === 'uninitiated') {
         return [
             'status' => 'Not Running (Never Started)',
             'port' => 'N/A',
             'password' => 'N/A',
-            'ip' => '127.0.0.1',
-            'user' => 'root',
+            'ip' => $host,
+            'user' => $user,
             'max_memory' => 'N/A',
             'max_databases' => 'N/A',
             'uninitiated' => $status_info[0],
@@ -69,8 +72,8 @@ function parseRedisStatus($status_output)
             'status' => 'Not Running (Stopped)',
             'port' => 'N/A',
             'password' => 'N/A',
-            'ip' => '127.0.0.1',
-            'user' => 'root',
+            'ip' => $host,
+            'user' => $user,
             'max_memory' => 'N/A',
             'max_databases' => 'N/A',
             'uninitiated' => 'N/A',
@@ -83,7 +86,7 @@ function parseRedisStatus($status_output)
  */
 function generateHeader($cpanel)
 {
-    $stylesheets = '<link rel="stylesheet" href="redis_style.css" charset="utf-8"/>';
+    $stylesheets = '<link rel="stylesheet" href="redis_style.css"/>';
     return str_replace('</head>', $stylesheets . '</head>', $cpanel->header("Redis Manager"));
 }
 
@@ -149,5 +152,8 @@ function generateStatusDetails($status_info)
             <p><strong>Status:</strong> <span class='status-label stopped'>Not Running</span></p>
         ";
     }
+
 }
+
 ?>
+

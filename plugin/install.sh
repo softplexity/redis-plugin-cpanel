@@ -1,6 +1,6 @@
 rm -fR /usr/local/cpanel/base/frontend/jupiter/redis_plugin
 mkdir /usr/local/cpanel/base/frontend/jupiter/redis_plugin
-cd /usr/local/cpanel/base/frontend/jupiter/redis_plugin
+cd /usr/local/cpanel/base/frontend/jupiter/redis_plugin || exit
 
 echo "Downloading Redis cPanel Plugin..."
 wget -q https://github.com/softplexity/redis-plugin-cpanel/archive/refs/heads/main.zip -O Redis_Plugin_Package.zip
@@ -20,7 +20,7 @@ mv redis-plugin-cpanel-main/plugin/* ./
 echo "Cleaning Up..."
 rm -vf Redis_Plugin_Package.zip
 rm -rvf redis-plugin-cpanel-main
-cd -
+cd - || exit
 cd ../
 rm -rvf redis-plugin-cpanel
 
