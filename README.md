@@ -14,8 +14,8 @@ A cPanel Plugin that empowers individual cPanel users to control their own Redis
 
 ## Environment Tested
 
-- cPanel 124.0.23 on AlmaLinux 9
-- cPanel 124.0.23 on CloudLinux 9
+- cPanel 124.0.23 on AlmaLinux 8/9
+- cPanel 124.0.23 on CloudLinux 8/9
 
 # Installation
 
