@@ -10,7 +10,7 @@ echo "Extracting Plugin..."
 unzip Redis_Plugin_Package.zip
 
 # Moving To Plugin Residence
-mv redis-plugin-cpanel/plugin/* ./
+mv redis-plugin-cpanel-main/plugin/* ./
 
 # Register Plugin with cPanel
 /usr/local/cpanel/scripts/install_plugin /usr/local/cpanel/base/frontend/jupiter/redis_plugin --theme jupiter
@@ -19,7 +19,7 @@ mv redis-plugin-cpanel/plugin/* ./
 #Cleanup By Removing Packages
 echo "Cleaning Up..."
 rm -vf Redis_Plugin_Package.zip
-rm -rvf redis-plugin-cpanel
+rm -rvf redis-plugin-cpanel-main
 cd -
 cd ../
 rm -rvf redis-plugin-cpanel
